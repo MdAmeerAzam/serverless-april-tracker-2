@@ -51,9 +51,15 @@ async function backupTables(trackerName, spreadsheetId, tables) {
                 if (!sheet) {
                     sheet = await doc.addSheet({ title: tableName, headerValues: HEADER_VALUES });
                 } else {
-                    const existingRows = await sheet.getRows();
-                    if (existingRows.length > 0) {
-                        maxTimestamp = Number(existingRows[existingRows.length - 1].get('timestamp'));
+                    try {
+                        const existingRows = await sheet.getRows();
+                        if (existingRows.length > 0) {
+                            maxTimestamp = Number(existingRows[existingRows.length - 1].get('timestamp'));
+                        }
+                    } catch (e) {
+                        // Sheet exists but has no header row (was cleared as last tab)
+                        // Set up headers first, then treat as empty
+                        await sheet.setHeaderRow(HEADER_VALUES);
                     }
                 }
 
