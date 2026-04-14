@@ -22,7 +22,7 @@ for (const asset of ['btc', 'eth']) {
     }
 }
 
-const HEADER_VALUES = ['id', 'timestamp', 'date', 'open', 'high', 'low', 'sar1', 'sar2', 'sar3', 'closevalue', 'closepts', 'closepct', 'closevol'];
+const HEADER_VALUES = ['id', 'timestamp', 'date', 'open', 'high', 'low', 'sar1', 'sar2', 'sar3', 'closeValue', 'closePts', 'closePct', 'closeVol'];
 
 async function getDoc(spreadsheetId) {
     const creds = require(path.join(process.cwd(), 'credentials.json'));
@@ -67,9 +67,21 @@ async function backupTables(trackerName, spreadsheetId, tables) {
                     continue;
                 }
 
+                // Explicitly remap PG lowercase keys → camelCase sheet headers
                 const toAppend = pgRows.map(r => ({
-                    ...r,
-                    date: new Date(Number(r.timestamp)).toISOString()
+                    id:         r.id,
+                    timestamp:  r.timestamp,
+                    date:       new Date(Number(r.timestamp)).toISOString(),
+                    open:       r.open,
+                    high:       r.high,
+                    low:        r.low,
+                    sar1:       r.sar1,
+                    sar2:       r.sar2,
+                    sar3:       r.sar3,
+                    closeValue: r.closevalue,
+                    closePts:   r.closepts,
+                    closePct:   r.closepct,
+                    closeVol:   r.closevol
                 }));
 
                 if (maxTimestamp > 0 && pgRows.length > 0 && Number(pgRows[0].timestamp) === maxTimestamp) {
