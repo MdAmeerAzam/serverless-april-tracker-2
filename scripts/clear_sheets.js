@@ -5,7 +5,6 @@ const { JWT } = require('google-auth-library');
 const path = require('path');
 
 const SPREADSHEETS = {
-    bitcoin: '12wWGLGhnQSDbHpvM3nn8gNs2Ip69TwmBnjlqWi-HV4o',
     crypto:  '1CoU7Df_HBGTqaV8nrt8b5pka0jWyXkYsgVh4Gukml8I',
 };
 
@@ -42,7 +41,6 @@ async function clearAllSheets(name, spreadsheetId) {
 
 (async () => {
     console.log('\n[Clear Sheets] Wiping all tabs for fresh re-push...\n');
-    await clearAllSheets('Bitcoin', SPREADSHEETS.bitcoin);
     await clearAllSheets('Crypto',  SPREADSHEETS.crypto);
     console.log('\n[Done] All sheets cleared. Now run: node scripts/run_backup.js\n');
     process.exit(0);

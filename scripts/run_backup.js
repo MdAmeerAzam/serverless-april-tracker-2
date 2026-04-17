@@ -6,12 +6,9 @@ const { JWT } = require('google-auth-library');
 const path = require('path');
 
 const SPREADSHEETS = {
-    bitcoin: '12wWGLGhnQSDbHpvM3nn8gNs2Ip69TwmBnjlqWi-HV4o',
     crypto:  '1CoU7Df_HBGTqaV8nrt8b5pka0jWyXkYsgVh4Gukml8I',
     macro:   '1VytsJdr8EnKUXqxdMhvcDMzd9fCQowAPzayMWKKc4rA'
 };
-
-const BITCOIN_TABLES = ['klines', 'klines_12h', 'klines_daily', 'klines_weekly', 'klines_monthly'];
 
 const CRYPTO_COMBOS = [];
 for (const asset of ['btc', 'eth']) {
@@ -120,7 +117,6 @@ async function backupTables(trackerName, spreadsheetId, tables) {
     try {
         console.log('\n[GitHub Actions] Starting Backup Run...\n');
 
-        await backupTables('Bitcoin', SPREADSHEETS.bitcoin, BITCOIN_TABLES);
         await backupTables('Crypto',  SPREADSHEETS.crypto,  CRYPTO_COMBOS);
 
         console.log('\n[Backup Complete]\n');

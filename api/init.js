@@ -1,10 +1,10 @@
 const { pool } = require('./db');
 
-const BITCOIN_TABLES = ['klines', 'klines_12h', 'klines_daily', 'klines_weekly', 'klines_monthly'];
+const BITCOIN_TABLES = ['klines', 'klines_8h', 'klines_12h', 'klines_daily', 'klines_weekly', 'klines_monthly'];
 
 const CRYPTO_ASSETS = ['btc', 'eth'];
 const CRYPTO_MARKETS = ['spot', 'futures'];
-const CRYPTO_INTERVALS = ['4h', '12h', 'daily', 'weekly', 'monthly'];
+const CRYPTO_INTERVALS = ['4h', '8h', '12h', 'daily', 'weekly', 'monthly'];
 
 const MACRO_ASSETS = ['gold', 'silver', 'brent', 'wti', 'natgas'];
 const MACRO_MARKETS = ['spot', 'futures'];

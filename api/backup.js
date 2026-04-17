@@ -1,24 +1,31 @@
-const { pool } = require('./db');
-const { GoogleSpreadsheet } = require('google-spreadsheet');
-const { JWT } = require('google-auth-library');
-const path = require('path');
-const fs = require('fs');
+import { pool } from './db.js';
+import { GoogleSpreadsheet } from 'google-spreadsheet';
+import { JWT } from 'google-auth-library';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 
-const CREDENTIALS_PATH = path.join(process.cwd(), 'credentials.json');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const SPREADSHEETS = {
-    bitcoin: '12wWGLGhnQSDbHpvM3nn8gNs2Ip69TwmBnjlqWi-HV4o',
     macro: '1VytsJdr8EnKUXqxdMhvcDMzd9fCQowAPzayMWKKc4rA',
-    crypto: '1CoU7Df_HBGTqaV8nrt8b5pka0jWyXkYsgVh4Gukml8I'
+    crypto: '1CoU7Df_HBGTqaV8nrt8b5pka0jWyXkYsgVh4Gukml8I',
+    bitcoin: '12wWGLGhnQSDbHpvM3nn8gNs2Ip69TwmBnjlqWi-HV4o'
 };
 
-const TIMEFRAMES = ['4h', '12h', 'daily', 'weekly', 'monthly'];
+const TIMEFRAMES = ['4h', '8h', '12h', 'daily', 'weekly', 'monthly'];
 
 let cachedDocs = {};
 
 async function authenticateDocs(tracker) {
     if (cachedDocs[tracker]) return cachedDocs[tracker];
 
-    const creds = require('../config.js');
+    // Assuming config.js is also converted or accessible
+    // For simplicity, using env vars directly is preferred, but following existing pattern:
+    const configPath = path.join(process.cwd(), 'config.js');
+    const { default: creds } = await import('file://' + configPath);
+    
     const serviceAccountAuth = new JWT({
         email: creds.client_email,
         key: creds.private_key,
@@ -32,11 +39,11 @@ async function authenticateDocs(tracker) {
 }
 
 // Micro-Transaction Endpoint: /api/backup?tracker=crypto&asset=eth&market=spot
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
     const { tracker, asset, market } = req.query;
 
     if (!tracker || !asset || !market) {
-        return res.status(400).json({ error: "Missing micro-transaction block coordinates (tracker, file, market)." });
+        return res.status(400).json({ error: "Missing micro-transaction block coordinates (tracker, asset, market)." });
     }
 
     try {
@@ -47,17 +54,20 @@ module.exports = async (req, res) => {
             targetIntervals = ['daily', 'weekly', 'monthly'];
         }
 
-        let tablesTofetch = [];
+        let tablesToFetch = [];
         
         if (tracker === 'bitcoin' && asset === 'btc') {
-            tablesTofetch = ['klines', 'klines_12h', 'klines_daily', 'klines_weekly', 'klines_monthly'];
+            tablesToFetch = [
+                'klines', 'klines_8h', 'klines_12h', 'klines_daily', 'klines_weekly', 'klines_monthly',
+                'btc_futures_4h', 'btc_futures_8h', 'btc_futures_12h', 'btc_futures_daily', 'btc_futures_weekly', 'btc_futures_monthly'
+            ];
         } else {
-            tablesTofetch = targetIntervals.map(i => `${asset}_${market}_${i}`);
+            tablesToFetch = targetIntervals.map(i => `${asset}_${market}_${i}`);
         }
 
         const client = await pool.connect();
         try {
-            for (const tableName of tablesTofetch) {
+            for (const tableName of tablesToFetch) {
                 let sheet = doc.sheetsByTitle[tableName];
                 const headerValues = ['id', 'timestamp', 'date', 'open', 'high', 'low', 'sar1', 'sar2', 'sar3', 'closeValue', 'closePts', 'closePct', 'closeVol'];
                 
@@ -67,9 +77,14 @@ module.exports = async (req, res) => {
                 if (!sheet) {
                     sheet = await doc.addSheet({ title: tableName, headerValues });
                 } else {
-                    existingRows = await sheet.getRows();
+                    // Only fetch the last 100 rows
+                    const rowsFetch = await sheet.getRows({ 
+                        offset: Math.max(0, sheet.rowCount - 100),
+                        limit: 100 
+                    });
+                    existingRows = rowsFetch;
                     if (existingRows.length > 0) {
-                        maxTimestamp = Number(existingRows[existingRows.length - 1].get('timestamp'));
+                        maxTimestamp = Number(existingRows[existingRows.length - 1].toObject().timestamp);
                     }
                 }
 
@@ -78,20 +93,31 @@ module.exports = async (req, res) => {
                 if (pgRows.length === 0) continue;
                 
                 let rowsToAppend = pgRows;
-                let rowsUpdated = 0;
 
-                if (maxTimestamp > 0 && pgRows[0].timestamp === String(maxTimestamp) && existingRows.length > 0) {
+                if (maxTimestamp > 0 && Number(pgRows[0].timestamp) === maxTimestamp && existingRows.length > 0) {
                     const lastRowToUpdate = existingRows[existingRows.length - 1];
                     const r = pgRows[0];
                     lastRowToUpdate.assign(r);
                     await lastRowToUpdate.save();
-                    rowsUpdated = 1;
                     rowsToAppend = pgRows.slice(1);
                 }
 
                 if (rowsToAppend.length > 0) {
-                    const appendData = rowsToAppend.map(r => ({ ...r, date: new Date(Number(r.timestamp)).toISOString() }));
-                    // Google API enforces 60 writes per minute, bulk appending is considered 1 write natively.
+                    const appendData = rowsToAppend.map(r => ({
+                        id: r.id,
+                        timestamp: r.timestamp,
+                        date: new Date(Number(r.timestamp)).toISOString(),
+                        open: r.open,
+                        high: r.high,
+                        low: r.low,
+                        sar1: r.sar1,
+                        sar2: r.sar2,
+                        sar3: r.sar3,
+                        closeValue: r.closevalue,
+                        closePts: r.closepts,
+                        closePct: r.closepct,
+                        closeVol: r.closevol
+                    }));
                     await sheet.addRows(appendData);
                 }
             }
@@ -99,10 +125,10 @@ module.exports = async (req, res) => {
             client.release();
         }
 
-        res.status(200).json({ success: true, message: `Backup array strictly pushed to physical Cloud DB for ${asset}_${market}` });
+        res.status(200).json({ success: true, message: `Backup successful for ${asset}_${market}` });
 
     } catch (err) {
-        console.error("Backup Failure Edge:", err);
+        console.error("Backup Failure:", err);
         res.status(500).json({ success: false, error: err.message });
     }
-};
+}

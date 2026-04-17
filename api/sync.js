@@ -1,6 +1,6 @@
-const TradingView = require('@mathieuc/tradingview');
-const { PSAR } = require('technicalindicators');
-const { pool } = require('./db');
+import { Client as TVClient } from '@mathieuc/tradingview';
+import { PSAR } from 'technicalindicators';
+import { pool } from './db.js';
 
 const TICKERS = {
     crypto: {
@@ -18,13 +18,14 @@ const TICKERS = {
 
 const TIMEFRAMES = {
     '4h': '240',
+    '8h': '480',
     'daily': '1D',
     'weekly': '1W',
     'monthly': '1M'
 };
 
 // API Route: /api/sync?tracker=crypto&asset=btc&market=spot&interval=4h
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
     const { tracker, asset, market, interval } = req.query;
 
     if (!tracker || !asset || !market || !interval) {
@@ -33,8 +34,8 @@ module.exports = async (req, res) => {
 
     let tableName = `${asset}_${market}_${interval}`;
     
-    // Legacy mapping exception for root Bitcoin tracking
-    if (tracker === 'bitcoin' && asset === 'btc') {
+    // Legacy mapping exception for root Bitcoin tracking (SPOT ONLY)
+    if (tracker === 'bitcoin' && asset === 'btc' && market === 'spot') {
         if (interval === '4h') tableName = 'klines';
         else tableName = `klines_${interval}`;
     }
@@ -42,6 +43,8 @@ module.exports = async (req, res) => {
     try {
         if (interval === '12h') {
             await synthesize12h(tableName, asset, market, tracker);
+        } else if (interval === '8h') {
+            await synthesize8h(tableName, asset, market, tracker);
         } else {
             let mapTracker = tracker;
             if (tracker === 'bitcoin') mapTracker = 'crypto';
@@ -51,6 +54,7 @@ module.exports = async (req, res) => {
                 let bybitCategory = market === 'futures' ? 'linear' : 'spot';
                 let bybitInterval = interval;
                 if (interval === '4h') bybitInterval = '240';
+                else if (interval === '8h') bybitInterval = '480';
                 else if (interval === '12h') bybitInterval = '720';
                 else if (interval === 'daily') bybitInterval = 'D';
                 else if (interval === 'weekly') bybitInterval = 'W';
@@ -63,17 +67,17 @@ module.exports = async (req, res) => {
                 await extractAndCalculate(tableName, rawTicker, tf);
             }
         }
-        res.status(200).json({ success: true, message: `Micro-Transaction Sync successful for ${tableName}` });
+        res.status(200).json({ success: true, message: `Sync successful for ${tableName}` });
     } catch (err) {
         console.error("Sync Failure:", err);
         res.status(500).json({ success: false, error: err.message });
     }
-};
+}
 
 async function extractAndCalculate(tableName, ticker, timeframe) {
     return new Promise((resolve, reject) => {
         let executionHalted = false;
-        const clientTV = new TradingView.Client();
+        const clientTV = new TVClient();
         const chart = new clientTV.Session.Chart();
         chart.setMarket(ticker, { timeframe, range: 20000 }); 
 
@@ -107,10 +111,23 @@ async function extractAndCalculate(tableName, ticker, timeframe) {
 }
 
 async function extractBybit(tableName, category, symbol, interval) {
-    const url = `https://api.bybit.com/v5/market/kline?category=${category}&symbol=${symbol}&interval=${interval}&limit=200`;
-    const response = await fetch(url);
-    const data = await response.json();
+    // Using api.bytick.com for stealth/stability
+    const url = `https://api.bytick.com/v5/market/kline?category=${category}&symbol=${symbol}&interval=${interval}&limit=200`;
+    const response = await fetch(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    });
     
+    // Check if response is JSON
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Non-JSON response from Bybit:", text.substring(0, 500));
+        throw new Error("Bybit returned non-JSON response (Likely WAF block).");
+    }
+
+    const data = await response.json();
     if (data.retCode !== 0) throw new Error("Bybit API Error: " + data.retMsg);
     
     const rawKlines = data.result.list.reverse().map(p => ({
@@ -126,27 +143,36 @@ async function extractBybit(tableName, category, symbol, interval) {
 }
 
 async function synthesize12h(tableName, asset, market, tracker) {
+    await runSynthesis(tableName, asset, market, tracker, 3); // 3 * 4h = 12h
+}
+
+async function synthesize8h(tableName, asset, market, tracker) {
+    await runSynthesis(tableName, asset, market, tracker, 2); // 2 * 4h = 8h
+}
+
+async function runSynthesis(tableName, asset, market, tracker, multiplier) {
     let sourceTable = `${asset}_${market}_4h`;
-    if (tracker === 'bitcoin' && asset === 'btc') sourceTable = 'klines';
+    if (tracker === 'bitcoin' && asset === 'btc' && market === 'spot') sourceTable = 'klines';
 
     const client = await pool.connect();
     try {
-        const { rows: rows4h } = await client.query(`SELECT * FROM ${sourceTable} ORDER BY timestamp ASC`);
+        const { rows: rows4h } = await client.query(`SELECT * FROM ${sourceTable} ORDER BY timestamp DESC LIMIT 500`);
         if (rows4h.length === 0) return;
+        rows4h.reverse(); // Bring back to ASC order for synthesis mapping
 
         let chunk = [];
         const syntheticKlines = [];
         
         for (const row of rows4h) {
             chunk.push(row);
-            if (chunk.length === 3) {
+            if (chunk.length === multiplier) {
                 syntheticKlines.push({
-                    timestamp: chunk[0].timestamp,
-                    open: chunk[0].open,
+                    timestamp: Number(chunk[0].timestamp),
+                    open: Number(chunk[0].open),
                     high: Math.max(...chunk.map(c => c.high)),
                     low: Math.min(...chunk.map(c => c.low)),
-                    close: chunk[2].closeValue, 
-                    volume: chunk.reduce((sum, c) => sum + Number(c.closeVol || 0), 0)
+                    close: Number(chunk[chunk.length - 1].closevalue),
+                    volume: chunk.reduce((sum, c) => sum + Number(c.closevol || 0), 0)
                 });
                 chunk = []; 
             }
@@ -162,8 +188,9 @@ async function processAndSaveDataPG(tableName, klines) {
 
     const client = await pool.connect();
     try {
-        // Retrieve historical state to correctly construct SAR 1/2/3 Parity mapping
-        const { rows: existingRows } = await client.query(`SELECT timestamp, sar1, sar2, sar3 FROM ${tableName} ORDER BY timestamp ASC`);
+        // Optimized Parity Check: Only fetch existing SAR data for the timestamps being synced
+        const minSyncTs = klines[0].timestamp;
+        const { rows: existingRows } = await client.query(`SELECT timestamp, sar1, sar2, sar3 FROM ${tableName} WHERE timestamp >= $1 ORDER BY timestamp ASC`, [minSyncTs]);
         const existingSarMap = new Map();
         existingRows.forEach(r => existingSarMap.set(Number(r.timestamp), r));
 
@@ -171,30 +198,12 @@ async function processAndSaveDataPG(tableName, klines) {
         const lowList = klines.map(k => k.low);
 
         const sarResults = new PSAR({ high: highList, low: lowList, step: 0.02, max: 0.2 }).getResult();
-        const sarResults2 = new PSAR({ high: highList, low: lowList, step: 0.01, max: 0.1 }).getResult();
+        const sarResults2 = new PSAR({ high: highList, low: lowList, step: 0.01, max: 0.2 }).getResult();
         
         const sarOffset = klines.length - sarResults.length;
         const sarOffset2 = klines.length - sarResults2.length;
 
-        await client.query("BEGIN");
-
-        const insertQuery = `
-            INSERT INTO ${tableName} 
-            (timestamp, open, high, low, closeValue, closePts, closePct, closeVol, sar1, sar2, sar3) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            ON CONFLICT (timestamp) DO UPDATE SET
-                open = EXCLUDED.open,
-                high = EXCLUDED.high,
-                low = EXCLUDED.low,
-                closeValue = EXCLUDED.closeValue,
-                closePts = EXCLUDED.closePts,
-                closePct = EXCLUDED.closePct,
-                closeVol = EXCLUDED.closeVol,
-                sar1 = EXCLUDED.sar1,
-                sar2 = EXCLUDED.sar2,
-                sar3 = EXCLUDED.sar3
-        `;
-
+        const dataRows = [];
         for (let i = 0; i < klines.length; i++) {
             const kline = klines[i];
             const isLiveCandle = (i === klines.length - 1);
@@ -219,10 +228,9 @@ async function processAndSaveDataPG(tableName, klines) {
                             s3 = 0;
                         }
                     } else {
-                        // Candle permanently closed — apply zero-reset rule:
-                        // If SAR 3 = SAR 1, no divergence from genesis anchor → reset to 0
                         const frozenS3 = Number(existing.sar3);
-                        s3 = (frozenS3 !== 0 && frozenS3 === Number(existing.sar1)) ? 0 : frozenS3;
+                        // Zero-Reset 3 Rule: If SAR 3 matches Genesis Anchor (SAR 1), it resets to 0.
+                        s3 = (frozenS3 !== 0 && Math.abs(frozenS3 - s1) < 0.00000001) ? 0 : frozenS3;
                     }
                 } else {
                     s1 = currentCalcSar;
@@ -233,22 +241,54 @@ async function processAndSaveDataPG(tableName, klines) {
 
             let closePts = 0, closePct = 0;
             let prevClose = i > 0 ? klines[i - 1].close : kline.open;
-
             if (prevClose > 0) {
                 closePts = kline.close - prevClose;
                 closePct = (closePts / prevClose) * 100;
             }
 
-            await client.query(insertQuery, [
+            dataRows.push([
                 kline.timestamp, kline.open, kline.high, kline.low, kline.close,
                 parseFloat(closePts.toFixed(5)), parseFloat(closePct.toFixed(5)), kline.volume,
                 s1, s2, s3
             ]);
         }
+
+        // Execute as a single batch query to prevent serverless timeouts
+        const values = [];
+        const placeholders = [];
+        dataRows.forEach((row, rowIndex) => {
+            const offset = rowIndex * 11;
+            const singleRowPlaceholders = [];
+            row.forEach((val, valIndex) => {
+                values.push(val);
+                singleRowPlaceholders.push(`$${offset + valIndex + 1}`);
+            });
+            placeholders.push(`(${singleRowPlaceholders.join(',')})`);
+        });
+
+        await client.query("BEGIN");
+        const batchQuery = `
+            INSERT INTO ${tableName} 
+            (timestamp, open, high, low, closeValue, closePts, closePct, closeVol, sar1, sar2, sar3) 
+            VALUES ${placeholders.join(',')}
+            ON CONFLICT (timestamp) DO UPDATE SET
+                open = EXCLUDED.open,
+                high = EXCLUDED.high,
+                low = EXCLUDED.low,
+                closeValue = EXCLUDED.closeValue,
+                closePts = EXCLUDED.closePts,
+                closePct = EXCLUDED.closePct,
+                closeVol = EXCLUDED.closeVol,
+                sar1 = EXCLUDED.sar1,
+                sar2 = EXCLUDED.sar2,
+                sar3 = EXCLUDED.sar3
+        `;
+
+        await client.query(batchQuery, values);
         await client.query("COMMIT");
-    } catch (err) {
+    } catch (e) {
         await client.query("ROLLBACK");
-        throw err;
+        throw e;
     } finally {
         client.release();
     }
