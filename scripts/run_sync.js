@@ -43,7 +43,8 @@ async function fetchBybit(category, symbol, interval, limit = 200) {
 async function synthesize12h(sourceTable) {
     const client = await pool.connect();
     try {
-        const { rows } = await client.query(`SELECT * FROM ${sourceTable} ORDER BY timestamp ASC`);
+        const { rows } = await client.query(`SELECT * FROM ${sourceTable} ORDER BY timestamp DESC LIMIT 600`);
+        rows.reverse();
         const synthetic = [];
         let chunk = [];
         for (const row of rows) {
@@ -71,8 +72,10 @@ async function processAndSave(tableName, klines) {
 
     const client = await pool.connect();
     try {
+        const minTimestamp = klines[0].timestamp;
         const { rows: existing } = await client.query(
-            `SELECT timestamp, sar1, sar2, sar3 FROM ${tableName} ORDER BY timestamp ASC`
+            `SELECT timestamp, sar1, sar2, sar3 FROM ${tableName} WHERE timestamp >= $1 ORDER BY timestamp ASC`,
+            [minTimestamp]
         );
         const sarMap = new Map();
         existing.forEach(r => sarMap.set(Number(r.timestamp), r));
