@@ -160,6 +160,7 @@ async function processAndSave(tableName, klines) {
                 } catch (e) {
                     console.log(`  ✖ ${tableName}: ${e.message}`);
                 }
+            }
         }
 
         console.log('\n[Sync Complete]\n');
