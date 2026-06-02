@@ -120,7 +120,6 @@ async function processAndSave(tableName, klines) {
 
         console.log(`  ✔ ${tableName}: ${klines.length} rows synced`);
     } catch (err) {
-        await client.query('ROLLBACK');
         throw err;
     } finally {
         client.release();
