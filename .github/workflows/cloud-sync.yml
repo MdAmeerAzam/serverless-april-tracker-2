@@ -29,7 +29,6 @@ jobs:
 
   backup:
     name: Backup Supabase → Sheets
-    needs: sync
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && (github.event.schedule == '2,17,32,47 * * * *'))
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +46,6 @@ jobs:
 
   watchdog:
     name: Crypto Cloud WATCHDOG
-    needs: sync
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.event.schedule == '5 * * * *')
     runs-on: ubuntu-latest
     steps:
