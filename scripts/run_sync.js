@@ -2,6 +2,14 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const { pool } = require('../api/db');
 const { PSAR } = require('technicalindicators');
+const { RestClientV5 } = require('bybit-api');
+
+// Initialize the cryptographically signed client
+const bybitClient = new RestClientV5({
+    key: process.env.BYBIT_API_KEY,
+    secret: process.env.BYBIT_API_SECRET,
+    enable_time_sync: true,
+});
 
 const BITCOIN_ASSETS = [
     { tableName: 'klines',          symbol: 'BTCUSDT', category: 'linear', interval: '240' },
@@ -27,11 +35,16 @@ const CRYPTO_INTERVALS = [
 ];
 
 async function fetchBybit(category, symbol, interval, limit = 200) {
-    const url = `https://api.bybit.com/v5/market/kline?category=${category}&symbol=${symbol}&interval=${interval}&limit=${limit}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.retCode !== 0) throw new Error('Bybit error: ' + data.retMsg);
-    return data.result.list.reverse().map(p => ({
+    const response = await bybitClient.getKline({
+        category: category,
+        symbol: symbol,
+        interval: interval,
+        limit: limit
+    });
+    
+    if (response.retCode !== 0) throw new Error('Bybit error: ' + response.retMsg);
+    
+    return response.result.list.reverse().map(p => ({
         timestamp: Number(p[0]),
         open: Number(p[1]),
         high: Number(p[2]),
