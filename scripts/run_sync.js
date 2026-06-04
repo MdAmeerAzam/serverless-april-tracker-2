@@ -34,7 +34,7 @@ const CRYPTO_INTERVALS = [
     { interval: 'monthly', bybit: 'M' },
 ];
 
-async function fetchBybit(category, symbol, interval, limit = 200) {
+async function fetchBybit(category, symbol, interval, limit = 1000) {
     const response = await bybitClient.getKline({
         category: category,
         symbol: symbol,
@@ -73,9 +73,7 @@ async function processAndSave(tableName, klines) {
         const lows  = klines.map(k => k.low);
 
         const sar1Results = new PSAR({ high: highs, low: lows, step: 0.02, max: 0.2 }).getResult();
-        const sar2Results = new PSAR({ high: highs, low: lows, step: 0.01, max: 0.1 }).getResult();
         const off1 = klines.length - sar1Results.length;
-        const off2 = klines.length - sar2Results.length;
 
         const formattedValues = [];
         for (let i = 0; i < klines.length; i++) {
@@ -85,8 +83,8 @@ async function processAndSave(tableName, klines) {
 
             if (i >= off1) {
                 const calc1 = Number(sar1Results[i - off1].toFixed(2));
-                const calc2 = i >= off2 ? (sar2Results[i - off2] || 0) : 0;
                 const ex = sarMap.get(k.timestamp);
+                const calc2 = ex ? Number(ex.sar2) : 0;
 
                 if (ex) {
                     const old1 = Number(ex.sar1);

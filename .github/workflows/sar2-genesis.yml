@@ -1,0 +1,20 @@
+name: SAR 2 True Genesis
+on:
+  schedule:
+    - cron: '1 * * * *' # Minute 1 of every hour (UTC)
+  workflow_dispatch:
+jobs:
+  genesis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: node scripts/run_sar2_genesis.js
+        env:
+          DATABASE_URL: ${{ secrets.PGURI }}
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
