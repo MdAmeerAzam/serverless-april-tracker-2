@@ -2,11 +2,36 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const { pool } = require('../api/db');
 
 const TABLES = [
-    { name: 'klines', interval: 240 }, { name: 'klines_12h', interval: 720 },
-    { name: 'klines_daily', interval: 1440 }, { name: 'klines_weekly', interval: 10080 },
+    // BTC Macro klines (5 timeframes)
+    { name: 'klines',         interval: 240   },
+    { name: 'klines_12h',     interval: 720   },
+    { name: 'klines_daily',   interval: 1440  },
+    { name: 'klines_weekly',  interval: 10080 },
     { name: 'klines_monthly', interval: 43200 },
-    { name: 'btc_spot_4h', interval: 240 }, { name: 'eth_spot_4h', interval: 240 },
-    { name: 'btc_futures_4h', interval: 240 }, { name: 'eth_futures_4h', interval: 240 }
+    // BTC Spot (4 timeframes)
+    { name: 'btc_spot_4h',      interval: 240   },
+    { name: 'btc_spot_12h',     interval: 720   },
+    { name: 'btc_spot_daily',   interval: 1440  },
+    { name: 'btc_spot_weekly',  interval: 10080 },
+    { name: 'btc_spot_monthly', interval: 43200 },
+    // BTC Futures (4 timeframes)
+    { name: 'btc_futures_4h',      interval: 240   },
+    { name: 'btc_futures_12h',     interval: 720   },
+    { name: 'btc_futures_daily',   interval: 1440  },
+    { name: 'btc_futures_weekly',  interval: 10080 },
+    { name: 'btc_futures_monthly', interval: 43200 },
+    // ETH Spot (4 timeframes)
+    { name: 'eth_spot_4h',      interval: 240   },
+    { name: 'eth_spot_12h',     interval: 720   },
+    { name: 'eth_spot_daily',   interval: 1440  },
+    { name: 'eth_spot_weekly',  interval: 10080 },
+    { name: 'eth_spot_monthly', interval: 43200 },
+    // ETH Futures (4 timeframes)
+    { name: 'eth_futures_4h',      interval: 240   },
+    { name: 'eth_futures_12h',     interval: 720   },
+    { name: 'eth_futures_daily',   interval: 1440  },
+    { name: 'eth_futures_weekly',  interval: 10080 },
+    { name: 'eth_futures_monthly', interval: 43200 },
 ];
 
 async function checkTable(client, t) {
