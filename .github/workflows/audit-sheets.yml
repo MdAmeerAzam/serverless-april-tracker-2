@@ -11,7 +11,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - run: node scripts/audit_sheets.js
+      - run: node scripts/purge_db.js
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
